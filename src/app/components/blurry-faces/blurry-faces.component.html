@@ -1,0 +1,17 @@
+<ion-header>
+  <ion-toolbar>
+    <ion-title>Video Face Blur</ion-title>
+  </ion-toolbar>
+</ion-header>
+
+<ion-content class="ion-padding">
+  <input type="file" (change)="onVideoSelected($event)" accept="video/*" />
+  <video #videoPlayer controls style="width: 100%; margin-top: 10px;"></video>
+
+  <ion-button expand="full" (click)="processVideo()" [disabled]="!videoLoaded">
+    Elabora
+  </ion-button>
+
+  <div *ngIf="processing">Elaborazione in corso...</div>
+  <a *ngIf="downloadUrl" [href]="downloadUrl" download="output.mp4">Scarica Video</a>
+</ion-content>

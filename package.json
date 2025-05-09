@@ -26,7 +26,10 @@
     "@capacitor/haptics": "7.0.0",
     "@capacitor/keyboard": "7.0.0",
     "@capacitor/status-bar": "7.0.0",
+    "@ffmpeg/ffmpeg": "^0.11.6",
     "@ionic/angular": "^8.0.0",
+    "@tensorflow/tfjs-core": "^4.22.0",
+    "face-api.js": "^0.22.2",
     "ionicons": "^7.0.0",
     "rxjs": "~7.8.0",
     "tslib": "^2.3.0",
@@ -59,6 +62,11 @@
     "karma-jasmine": "~5.1.0",
     "karma-jasmine-html-reporter": "~2.1.0",
     "typescript": "~5.6.3"
+  },
+  "browser": {
+    "fs": false,
+    "os": false,
+    "path": false
   },
   "description": "An Ionic project"
 }

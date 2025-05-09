@@ -1,0 +1,18 @@
+<ion-content class="ion-padding">
+  <h2>Elabora Video (con Audio nativo)</h2>
+
+  <input type="file" accept="video/mp4,video/webm" (change)="onFileSelected($event)" />
+
+  <video *ngIf="originalVideoUrl" controls [src]="originalVideoUrl" width="100%" style="margin-top: 20px;"></video>
+
+  <ion-button expand="block" [disabled]="!videoFile || processing" (click)="processVideo()">Elabora</ion-button>
+
+  <ion-progress-bar *ngIf="processing" [value]="progress / 100"></ion-progress-bar>
+  <p *ngIf="processing">Elaborazione: {{ progress }}%</p>
+
+  <canvas #previewCanvas width="320" height="180" style="margin-top: 10px; border: 1px solid #ccc; max-width: 100%;"></canvas>
+
+  <video *ngIf="processedVideoUrl" controls [src]="processedVideoUrl" width="100%" style="margin-top: 20px;"></video>
+
+  <ion-button expand="block" (click)="downloadVideo()">Scarica</ion-button>
+</ion-content>
