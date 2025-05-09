@@ -1,20 +1,51 @@
-<ion-header [translucent]="true">
+<ion-header>
   <ion-toolbar>
-    <ion-title>
-      Blank
-    </ion-title>
+    <ion-title>BlurryFaces</ion-title>
   </ion-toolbar>
 </ion-header>
 
-<ion-content [fullscreen]="true">
-  <ion-header collapse="condense">
-    <ion-toolbar>
-      <ion-title size="large">Blank</ion-title>
-    </ion-toolbar>
-  </ion-header>
-
-  <div id="container">
-    <strong>Ready to create an app?</strong>
-    <p>Start with Ionic <a target="_blank" rel="noopener noreferrer" href="https://ionicframework.com/docs/components">UI Components</a></p>
+<ion-content class="ion-padding">
+  <!-- Pulsante per selezionare il video -->
+  <ion-button expand="block" (click)="fileInput.click()">Sfoglia</ion-button>
+  <input type="file" accept="video/*" (change)="onFileSelected($event)" hidden #fileInput>
+  
+  <!-- Anteprima del video selezionato -->
+  <div>
+    <ion-card>
+      <video #videoPlayer [src]="videoUrl" controls style="width: 100%; max-height: 200px;"></video>
+    </ion-card>
+  </div>
+  
+  <!-- Controlli per l'elaborazione -->
+  <ion-button expand="block" (click)="processVideo()" [disabled]="!videoUrl || processing">
+    Elabora
+  </ion-button>
+  <ion-button expand="block" color="danger" (click)="finalizeProcessing()" [disabled]="!processing">
+    Finalizza
+  </ion-button>
+  <ion-button expand="block" color="secondary" (click)="downloadVideo()" [disabled]="!processedVideoUrl">
+    Scarica
+  </ion-button>
+  
+  <!-- Visualizzazione della progress bar e percentuale durante l'elaborazione -->
+  <div>
+    <ion-text>
+      <p>Elaborazione in corso: {{ progress }}%</p>
+    </ion-text>
+    <ion-progress-bar [value]="progress / 100"></ion-progress-bar>
+    
+    <!-- Anteprima dinamica durante l'elaborazione -->
+    <ion-card>
+      <ion-card-header>
+        <ion-card-title>Anteprima elaborazione</ion-card-title>
+      </ion-card-header>
+      <ion-card-content>
+        @if (processedVideoUrl) {
+          <video [src]="processedVideoUrl" controls style="width: 100%; max-height: 200px;"></video>
+        } @else {
+          <img [src]="previewVideoUrl" alt="Anteprima elaborata" style="width: 100%; max-height: 200px; object-fit: contain;"/>
+        }
+      </ion-card-content>
+    </ion-card>
   </div>
 </ion-content>
