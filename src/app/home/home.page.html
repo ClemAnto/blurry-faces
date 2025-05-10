@@ -20,6 +20,7 @@
   <ion-button expand="block" (click)="processVideo()" [disabled]="!videoUrl || processing">
     Elabora
   </ion-button>
+  
   <ion-button expand="block" color="danger" (click)="finalizeProcessing()" [disabled]="!processing">
     Finalizza
   </ion-button>
@@ -41,9 +42,9 @@
       </ion-card-header>
       <ion-card-content>
         @if (processedVideoUrl) {
-          <video [src]="processedVideoUrl" controls style="width: 100%; max-height: 200px;"></video>
+          <video [src]="processedVideoUrl" controls style="width: 100%"></video>
         } @else {
-          <img [src]="previewVideoUrl" alt="Anteprima elaborata" style="width: 100%; max-height: 200px; object-fit: contain;"/>
+          <img [src]="previewVideoUrl" alt="Anteprima elaborata" style="width: 100%; object-fit: contain;"/>
         }
       </ion-card-content>
     </ion-card>

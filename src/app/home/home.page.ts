@@ -18,7 +18,7 @@ export class HomePage {
 	processing: boolean = false;
 	progress: number = 0;
 	stopProcessing: boolean = false;
-	lastValidDetections: faceapi.FaceDetection[] = [];
+	
 
 	@ViewChild('videoPlayer', { static: false }) videoPlayer!: ElementRef<HTMLVideoElement>;
 
@@ -54,6 +54,176 @@ export class HomePage {
 		this.stopProcessing = false;
 		console.log('Inizio elaborazione video');
 
+		const video = document.createElement('video');
+		video.src = this.videoUrl as string;
+		await video.play();
+		video.pause();
+
+		// Creazione di un canvas per processare i frame
+		const canvas = document.createElement('canvas');
+		canvas.width = video.videoWidth;
+		canvas.height = video.videoHeight;
+		const ctx = canvas.getContext('2d', {willReadFrequently:true})!;
+
+		// Calcolo del numero totale di frame (assumendo 25 fps)
+		const fps = 25;
+		const totalFrames = Math.floor(video.duration * fps);
+		let currentFrame = 0;
+
+		var lastDetections: faceapi.FaceDetection[] = [];
+
+		const seekToTime = (time: number) => new Promise<void>(r => {
+			video.onseeked = () => r();
+			video.currentTime = time;
+		});
+
+		const frames:string[] = [];
+
+		// Funzione ricorsiva per processare ogni frame
+		const processFrame = async () => {
+			
+
+			// Disegna il frame corrente nel canvas
+			ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+			
+			// Rilevazione dei volti nel frame corrente
+			//const detections = await faceapi.detectAllFaces(canvas, new faceapi.TinyFaceDetectorOptions());
+			let detections = await faceapi.detectAllFaces(canvas, new faceapi.SsdMobilenetv1Options({ minConfidence:0.2}))
+			//let detections = await faceapi.detectAllFaces(canvas, new faceapi.MtcnnOptions());
+			console.log(`Frame ${currentFrame}: volti rilevati = ${detections.length}`);
+
+			// Se non rileva alcun volto, usa l'ultimo set valido (smoothing temporale)
+			if (!detections || detections.length === 0) {
+				console.log(`Frame ${currentFrame}: nessun volto rilevato, utilizzo rilevamento precedente`);
+				detections = lastDetections;
+			} else {
+				lastDetections = detections;
+			}
+
+			// Applica un effetto blur per ogni volto rilevato
+			detections.forEach(det => {
+				const { x, y, width, height } = det.box;
+				ctx.filter = 'blur(20px)';
+				// Ridisegna la porzione del volto con l'effetto blur
+				ctx.drawImage(canvas, x, y, width, height, x, y, width, height);
+				ctx.filter = 'blur(5px)';
+				// Ridisegna la porzione del volto con l'effetto blur
+				ctx.drawImage(canvas, x, y, width, height, x, y, width, height);
+				ctx.filter = 'none';
+			});
+			
+			// Aggiorna l’anteprima dinamica (qui viene salvato il frame corrente come immagine)
+			this.previewVideoUrl = canvas.toDataURL('image/webp', 1);
+			frames.push(this.previewVideoUrl);
+			console.log(`Frames salvati ${frames.length}`);
+
+			// Processa il frame successivo
+			currentFrame++;
+			this.progress = Math.floor((currentFrame / totalFrames) * 100);
+
+			if (this.progress < 100) {
+				await seekToTime(currentFrame / fps);
+				processFrame();
+			} else {
+				console.log(`Estrazione completata: ${frames.length} frames.`);
+
+
+				console.log(`Ricostruzione filmato finale`);
+
+				// Creazione di un canvas per processare i frame
+				const rebuildCanvas = document.createElement('canvas');
+				rebuildCanvas.width = video.videoWidth;
+				rebuildCanvas.height = video.videoHeight;
+				const ctx2 = rebuildCanvas.getContext('2d', {willReadFrequently:true})!;
+
+				// Reset del canvas
+				//ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+				// Cattura lo stream dal canvas (solo video)
+				const rebuildStream = rebuildCanvas.captureStream(fps);
+				
+				video.currentTime = 0;
+				await video.play();
+
+				// Cattura lo stream audio (e video) dal video originale
+				const videoStream = (video as any).captureStream();
+				const audioTracks:[] = videoStream.getAudioTracks();
+				// Aggiungi ogni track audio allo stream del canvas
+				(audioTracks ?? []).forEach(track => rebuildStream.addTrack(track));
+				
+
+
+				// Imposta il MediaRecorder per acquisire il video elaborato
+				// Specificando un timeslice per ottenere dati periodici
+				const mediaRecorder = new MediaRecorder(rebuildStream, { 
+					mimeType: 'video/webm;codecs=vp9',
+					videoBitsPerSecond: 5_000_000
+				});
+				const recordedChunks: Blob[] = [];
+
+				mediaRecorder.ondataavailable = (e) => {
+					console.log('Chunks ' + e.data.size);
+					if (e.data.size > 0) {
+						console.log('Push chunks ', e.data);
+						recordedChunks.push(e.data);
+					}
+				};
+
+				console.log(`Inizio registrazione`);
+				mediaRecorder.start();
+
+				const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+				const rebuildFrames = async() => {
+					if (!frames.length) {
+						console.log('Fine della ricostruzione... ');
+						mediaRecorder.requestData();
+						await sleep(1000);
+						mediaRecorder.stop();
+						this.processing = false;
+						// Creazione del blob finale
+						const blob = new Blob(recordedChunks, { type: 'video/webm' });
+						this.processedVideoUrl = URL.createObjectURL(blob);
+						return;
+					}
+
+					console.log('Draw frame ' + frames.length);
+					this.previewVideoUrl = frames.shift()!;
+
+					const img = new Image();
+					img.src = this.previewVideoUrl;
+					img.onload = async () => {
+						ctx2.drawImage(img, 0, 0, rebuildCanvas.width, rebuildCanvas.height);
+						await sleep(1000/fps);
+						rebuildFrames();
+					};
+
+					
+				}
+
+				rebuildFrames()
+			}
+		};
+
+		
+		processFrame();
+
+
+
+		
+	}
+
+	
+
+	// Elaborazione del video
+	/*
+	async _processVideo() {
+		if (!this.videoUrl) return;
+		this.processing = true;
+		this.progress = 0;
+		this.stopProcessing = false;
+		console.log('Inizio elaborazione video');
+
 		// Creazione di un elemento video per l'elaborazione
 		const video = document.createElement('video');
 		video.src = this.videoUrl as string;
@@ -70,6 +240,9 @@ export class HomePage {
 		const totalFrames = Math.floor(video.duration * fps);
 		let currentFrame = 0;
 	
+		console.log('Durata video: ' + video.duration);
+		console.log('FPS video: ' + fps);
+
 		// Cattura lo stream dal canvas (solo video)
 		const canvasStream = canvas.captureStream(fps);
 
@@ -83,7 +256,10 @@ export class HomePage {
 
 		// Imposta il MediaRecorder per acquisire il video elaborato
 		// Specificando un timeslice per ottenere dati periodici
-		const mediaRecorder = new MediaRecorder(canvasStream, { mimeType: 'video/webm' });
+		const mediaRecorder = new MediaRecorder(canvasStream, { 
+			mimeType: 'video/webm;codecs=vp9',
+			videoBitsPerSecond: 5_000_000
+		});
 		const recordedChunks: Blob[] = [];
 
 		mediaRecorder.ondataavailable = (e) => {
@@ -93,12 +269,17 @@ export class HomePage {
 			}
 		};
 
-		mediaRecorder.start(100);
+		mediaRecorder.start();
+
+		const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
 
 		// Funzione ricorsiva per processare ogni frame
 		const processFrame = async () => {
 			if (this.stopProcessing || video.ended) {
 				console.log('Elaborazione interrotta o completata');
+				mediaRecorder.requestData();
+				await sleep(1000);
 				mediaRecorder.stop();
 				this.processing = false;
 				// Creazione del blob finale
@@ -109,7 +290,7 @@ export class HomePage {
 
 			// Disegna il frame corrente nel canvas
 			ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-			/*
+			
 			// Rilevazione dei volti nel frame corrente
 			//const detections = await faceapi.detectAllFaces(canvas, new faceapi.TinyFaceDetectorOptions());
 			let detections = await faceapi.detectAllFaces(canvas, new faceapi.SsdMobilenetv1Options({ minConfidence:0.2}))
@@ -127,18 +308,21 @@ export class HomePage {
 			// Applica un effetto blur per ogni volto rilevato
 			detections.forEach(det => {
 				const { x, y, width, height } = det.box;
-				ctx.filter = 'blur(16px)';
+				ctx.filter = 'blur(20px)';
+				// Ridisegna la porzione del volto con l'effetto blur
+				ctx.drawImage(canvas, x, y, width, height, x, y, width, height);
+				ctx.filter = 'blur(5px)';
 				// Ridisegna la porzione del volto con l'effetto blur
 				ctx.drawImage(canvas, x, y, width, height, x, y, width, height);
 				ctx.filter = 'none';
 			});
 			
-			*/
+			
 			currentFrame++;
 			this.progress = Math.floor((currentFrame / totalFrames) * 100);
 
 			// Aggiorna l’anteprima dinamica (qui viene salvato il frame corrente come immagine)
-			this.previewVideoUrl = canvas.toDataURL('image/webp');
+			this.previewVideoUrl = canvas.toDataURL('image/webp', 1);
 
 			// Processa il frame successivo
 			requestAnimationFrame(processFrame);
@@ -147,7 +331,7 @@ export class HomePage {
 
 		processFrame();
 	}
-
+	*/
 	// Interrompe e finalizza l'elaborazione corrente
 	finalizeProcessing() {
 		if (this.processing) {
