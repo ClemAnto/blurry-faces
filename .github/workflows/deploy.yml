@@ -3,7 +3,7 @@ name: Build and Deploy Angular App
 on:
   push:
     branches:
-      - main  # o il branch che usi
+      - release  # o il branch che usi
 
 jobs:
   build-and-deploy:
@@ -28,4 +28,4 @@ jobs:
       uses: peaceiris/actions-gh-pages@v3
       with:
         github_token: ${{ secrets.GITHUB_TOKEN }}
-        publish_dir: ./dist/my-app  # <- metti qui il path corretto
+        publish_dir: ./dist  # <- metti qui il path corretto
