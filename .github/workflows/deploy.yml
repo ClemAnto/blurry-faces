@@ -18,14 +18,18 @@ jobs:
       with:
         node-version: '22'
 
+    - name: Install Yarn
+      run: corepack enable && corepack prepare yarn@stable --activate
+
     - name: Install dependencies
-      run: npm install
+      run: yarn install
 
     - name: Build Angular app
-      run: npm run build -- --configuration production
+      run: yarn build -- --configuration production
 
     - name: Deploy to GitHub Pages
       uses: peaceiris/actions-gh-pages@v3
       with:
-        github_token: ${{ secrets.GITHUB_TOKEN }}
+        #github_token: ${{ secrets.GITHUB_TOKEN }}
+        personal_token: ${{ secrets.GH_TOKEN }}
         publish_dir: ./dist  # <- metti qui il path corretto
