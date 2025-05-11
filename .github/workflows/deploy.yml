@@ -3,7 +3,7 @@ name: Build and Deploy Angular App
 on:
   push:
     branches:
-      - main  # o il branch che usi
+      - release  # o il branch che usi
 
 jobs:
   build-and-deploy:
@@ -25,7 +25,7 @@ jobs:
       run: yarn install
 
     - name: Build Angular app
-      run: yarn build -- --configuration production
+      run: yarn build
 
     - name: Deploy to GitHub Pages
       uses: peaceiris/actions-gh-pages@v3
