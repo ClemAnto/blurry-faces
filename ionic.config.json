@@ -1,7 +1,0 @@
-{
-  "name": "blurry-faces",
-  "integrations": {
-    "capacitor": {}
-  },
-  "type": "angular-standalone"
-}
