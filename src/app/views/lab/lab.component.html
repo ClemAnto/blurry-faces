@@ -1,9 +1,41 @@
-<nz-result nzStatus="info" nzTitle="Carica un video per iniziare">
-	<div nz-result-extra>
-	<button nz-button nzType="primary">
-		<nz-icon nzType="folder"/>
-		Sfoglia</button>
-	</div>
-</nz-result>
-START: <nz-icon nzType="star"></nz-icon>
-FOLDER: <nz-icon nzType="folder"></nz-icon>
+
+@if (!sourceUrl()) {
+	<nz-result nzStatus="info" nzTitle="Carica un video per iniziare">
+		<div nz-result-extra>
+			<button nz-button nzType="primary" 
+				nzSize="large" nzShape="round" 
+				(click)="fileInput.click()">
+				<nz-icon nzType="folder" /> Sfoglia</button>
+
+			<input type="file" accept="video/*" (change)="onFileSelected($event)" hidden #fileInput>
+
+		</div>
+	</nz-result>
+}@else {
+	<nz-card class="max-h-[80cqh] !flex">
+		@if (VideoProcessing.progressPreview() && !resultUrl()) {
+			<img class="max-h-full max-w-full m-auto rounded-lg" [src]="VideoProcessing.progressPreview()" />
+		} @else {
+			<video 
+				class="max-h-full max-w-full m-auto rounded-lg"
+				#videoPlayer [src]="resultUrl() || sourceUrl()" controls></video>
+		}
+	</nz-card>
+
+	<footer class="absolute bottom-6 right-6 flex justify-end items-end">
+		@if (resultUrl()) {
+			<button nz-button nzType="primary" 
+						nzSize="large" nzShape="round" (click)="downloadProcessedVideo()">
+						<nz-icon nzType="download" /> Scarica</button>
+		} @else {
+			@if (processing()) {
+				<nz-progress [nzPercent]="percentage()" nzType="circle" [nzWidth]="80"></nz-progress>
+
+			} @else {
+				<button nz-button nzType="primary" 
+						nzSize="large" nzShape="round" (click)="processVideo()">
+						<nz-icon nzType="play-circle" /> Elabora</button>
+			}
+		}
+	</footer>
+}

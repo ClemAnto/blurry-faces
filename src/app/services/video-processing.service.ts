@@ -1,19 +1,24 @@
-import { Injectable } from '@angular/core';
+import { Injectable, signal } from '@angular/core';
 import * as faceapi from 'face-api.js';
 
 
 @Injectable({ providedIn: 'root' })
 export class VideoProcessingService {
+
+	public progressPreview = signal<string>(null);
+	public progress = signal<number>(0);
+	public rebuild = signal<number>(0);
+
 	fps = 30;
 
 	async loadModels(): Promise<void> {
 		console.log("[VIDEO-PROCESSING] Load models...");
 		try {
 			//https://github.com/justadudewhohacks/face-api.js-models/tree/master
-			const MODEL_URL = 'https://cdn.jsdelivr.net/gh/justadudewhohacks/face-api.js-models@master/ssd_mobilenetv1';
+			//const MODEL_URL = 'https://cdn.jsdelivr.net/gh/justadudewhohacks/face-api.js-models@master/ssd_mobilenetv1';
 
-			//await faceapi.nets.ssdMobilenetv1.loadFromUri('assets/models/ssd_mobilenetv1');
-			await faceapi.nets.ssdMobilenetv1.loadFromUri(MODEL_URL);
+			await faceapi.nets.ssdMobilenetv1.loadFromUri('assets/models/ssd_mobilenetv1');
+			//await faceapi.nets.ssdMobilenetv1.loadFromUri(MODEL_URL);
 			console.log("[VIDEO-PROCESSING] Models loaded");
 		} catch (err) {
 			console.error("[VIDEO-PROCESSING] Model loading failed:", err);
@@ -21,7 +26,57 @@ export class VideoProcessingService {
 
 	}
 
-	async initializeVideo(videoUrl: string): Promise<HTMLVideoElement> {
+	async blurryFaces(videoUrl: string):Promise<string> {
+		console.log("[VIDEO-PROCESSING] Blurry faces!");
+		return new Promise(async (resolve, reject) => {
+			
+			this.progress.set(0);
+			const video = await this.initSource(videoUrl);
+			const [canvas, ctx] = this.createCanvas(video.videoWidth, video.videoHeight);
+			var lastDetections: faceapi.FaceDetection[] = [];
+			var currentFrame = 0;
+			const totalFrames = Math.floor(video.duration * this.fps);
+			console.log("[VIDEO-PROCESSING] totalFrames: " + totalFrames);
+			const frames: string[] = [];
+
+			const processFrame = async () => {
+				ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+				let detections = await this.detectFaces(canvas);
+				detections = detections.length ? detections : lastDetections;
+				if (detections.length) lastDetections = detections;
+				detections.forEach(det => this.applyBlur(ctx, det));
+
+				const frameData = canvas.toDataURL('image/png');
+				this.progressPreview.set(frameData);
+				frames.push(frameData);
+
+				currentFrame++;	
+				this.progress.set(Math.floor((currentFrame / totalFrames) * 100));
+				console.log("[VIDEO-PROCESSING] Process frame "+currentFrame + " " + this.progress() + "%");
+
+				//if (currentFrame < totalFrames && !this.stopProcessing) {
+				if (this.progress() < 100) {
+					await this.seekToTime(video, currentFrame / this.fps);
+					await processFrame();
+
+				} else {
+					const finalDuration = frames.length / this.fps;
+					console.log(`[HOME] Rebuild video duration: ${finalDuration} | frames: ${frames.length} `)
+
+					const audioTracks = await this.extractAudioTracks(video);
+					const processedVideoUrl = await this.rebuildVideo(
+						frames, video.videoWidth, video.videoHeight, audioTracks, this.fps
+					);
+
+					resolve(processedVideoUrl);
+				}
+			};
+
+			processFrame();
+		});
+	}
+
+	async initSource(videoUrl: string): Promise<HTMLVideoElement> {
 		const video = document.createElement('video');
 		video.src = videoUrl;
 		await video.play();
@@ -159,6 +214,8 @@ export class VideoProcessingService {
 		const frameDuration = 1000 / fps;
 		var count = 0;
 
+		this.rebuild.set(0);
+		const totalFrames = frames.length;
 		while (frames.length) {
 			var prev = performance.now();
 			const imageUrl = frames.shift()!;
@@ -166,9 +223,12 @@ export class VideoProcessingService {
 			//ctx.fillStyle = 'red'; // oppure '#ff0000'
 			//ctx.fillRect(0, 0, canvas.width, canvas.height);
 			ctx.drawImage(bitmap, 0, 0, width, height);
-			console.log("[VIDEO-PROCESSING] Draw frame " + count++);
 			const delta = performance.now() - prev;
+			count++;
 			await this.sleep(Math.max(1, frameDuration - delta));
+			const perc = Math.floor(count/totalFrames) * 100;
+			console.log("[VIDEO-PROCESSING] Draw frame " + count++ + " " + perc + "%");
+			this.rebuild.set(perc);
 		}
 
 		console.log("[VIDEO-PROCESSING] No more frames! ");

@@ -46,7 +46,7 @@ export class HomePage {
 		this.progress = 0;
 		this.stopProcessing = false;
 
-		const video = await this.VideoProcessing.initializeVideo(this.videoUrl as string);
+		const video = await this.VideoProcessing.initSource(this.videoUrl as string);
 		const totalFrames = Math.floor(video.duration * this.VideoProcessing.fps);
 		console.log(`[HOME] Video duration: ${video.duration} | frames: ${totalFrames} | size: ${video.videoWidth}x${video.videoHeight} `);
 

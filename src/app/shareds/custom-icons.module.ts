@@ -5,11 +5,15 @@ import { IconDefinition } from '@ant-design/icons-angular';
 import {
 	FolderOutline,
 	StarOutline,
+	PlayCircleOutline,
+	DownloadOutline
 } from '@ant-design/icons-angular/icons';
 
 const ICONS: IconDefinition[] = [
 	FolderOutline,
 	StarOutline,
+	PlayCircleOutline,
+	DownloadOutline
 ];
 
 @NgModule({
