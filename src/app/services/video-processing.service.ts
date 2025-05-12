@@ -55,7 +55,7 @@ export class VideoProcessingService {
 				console.log("[VIDEO-PROCESSING] Process frame "+currentFrame + " " + this.progress() + "%");
 
 				//if (currentFrame < totalFrames && !this.stopProcessing) {
-				if (this.progress() < 100) {
+				if (this.progress() < 2) {
 					await this.seekToTime(video, currentFrame / this.fps);
 					await processFrame();
 
@@ -105,7 +105,7 @@ export class VideoProcessingService {
 				prev = now;
 				intervals.push(delta);
 
-				if (intervals.length < 60) {
+				if (intervals.length < 100) {
 					video.requestVideoFrameCallback(step);
 				} else {
 					const avgInterval = intervals.reduce((a, b) => a + b) / intervals.length;
@@ -216,6 +216,8 @@ export class VideoProcessingService {
 
 		this.rebuild.set(0);
 		const totalFrames = frames.length;
+		console.log("[VIDEO-PROCESSING] totalFrames: " + totalFrames);
+
 		while (frames.length) {
 			var prev = performance.now();
 			const imageUrl = frames.shift()!;
@@ -226,8 +228,8 @@ export class VideoProcessingService {
 			const delta = performance.now() - prev;
 			count++;
 			await this.sleep(Math.max(1, frameDuration - delta));
-			const perc = Math.floor(count/totalFrames) * 100;
-			console.log("[VIDEO-PROCESSING] Draw frame " + count++ + " " + perc + "%");
+			const perc = Math.floor(count/totalFrames * 100);
+			console.log("[VIDEO-PROCESSING] Draw frame " + count + " " + perc + "%");
 			this.rebuild.set(perc);
 		}
 
