@@ -41,14 +41,14 @@ export class HomePage {
 	async processVideo() {
 		console.log("[HOME] Process Video")
 		if (!this.videoUrl) return;
-
+		
 		this.processing = true;
 		this.progress = 0;
 		this.stopProcessing = false;
 
 		const video = await this.VideoProcessing.initSource(this.videoUrl as string);
 		const totalFrames = Math.floor(video.duration * this.VideoProcessing.fps);
-		console.log(`[HOME] Video duration: ${video.duration} | frames: ${totalFrames} | size: ${video.videoWidth}x${video.videoHeight} `);
+		console.log(`[HOME] Video duration: ${video.duration.toFixed(2)} | frames: ${totalFrames} | size: ${video.videoWidth}x${video.videoHeight} `);
 
 		
 		const [canvas, ctx] = this.VideoProcessing.createCanvas(video.videoWidth, video.videoHeight);

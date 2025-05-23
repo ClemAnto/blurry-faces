@@ -52,10 +52,10 @@ export class VideoProcessingService {
 
 				currentFrame++;	
 				this.progress.set(Math.floor((currentFrame / totalFrames) * 100));
-				console.log("[VIDEO-PROCESSING] Process frame "+currentFrame + " " + this.progress() + "%");
+				console.log("[VIDEO-PROCESSING] Process frame "+currentFrame + " of " + totalFrames + " - " + this.progress() + "%");
 
 				//if (currentFrame < totalFrames && !this.stopProcessing) {
-				if (this.progress() < 2) {
+				if (this.progress() < 100) {
 					await this.seekToTime(video, currentFrame / this.fps);
 					await processFrame();
 
@@ -79,16 +79,20 @@ export class VideoProcessingService {
 	async initSource(videoUrl: string): Promise<HTMLVideoElement> {
 		const video = document.createElement('video');
 		video.src = videoUrl;
-		await video.play();
-		video.pause();
+		
+		
 
 		//this.fps = await this.retrieveFPS(video);
-		/*
-	await new Promise(resolve => {
+
+		if (video.readyState < 1) { 
+			await new Promise(resolve => {	
+				video.onloadedmetadata = () => resolve(true);
+			});
+		}
 		
-		video.onloadedmetadata = () => resolve(true);
-	});
-	*/
+		await video.play();
+		video.pause();
+		
 		return video;
 	}
 
@@ -229,7 +233,7 @@ export class VideoProcessingService {
 			count++;
 			await this.sleep(Math.max(1, frameDuration - delta));
 			const perc = Math.floor(count/totalFrames * 100);
-			console.log("[VIDEO-PROCESSING] Draw frame " + count + " " + perc + "%");
+			console.log("[VIDEO-PROCESSING] Draw frame " + count + " (" + frames.length + ") " + perc + "%");
 			this.rebuild.set(perc);
 		}
 
