@@ -1,5 +1,5 @@
 import { ApplicationConfig, provideZoneChangeDetection, importProvidersFrom } from '@angular/core';
-import { provideRouter } from '@angular/router';
+import { provideRouter, withHashLocation } from '@angular/router';
 
 
 import { it_IT, provideNzI18n } from 'ng-zorro-antd/i18n';
@@ -15,7 +15,7 @@ registerLocaleData(it);
 export const appConfig: ApplicationConfig = {
 	providers: [
 		provideZoneChangeDetection({ eventCoalescing: true }), 
-		provideRouter(routes), provideNzI18n(it_IT), 
+		provideRouter(routes, withHashLocation()), provideNzI18n(it_IT), 
 		importProvidersFrom(FormsModule), 
 		provideAnimationsAsync(), 
 		provideHttpClient()
