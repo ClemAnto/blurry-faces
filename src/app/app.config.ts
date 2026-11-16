@@ -7,8 +7,10 @@ import { registerLocaleData } from '@angular/common';
 import it from '@angular/common/locales/it';
 import { FormsModule } from '@angular/forms';
 import { provideAnimationsAsync } from '@angular/platform-browser/animations/async';
-import { provideHttpClient } from '@angular/common/http';
+import { provideHttpClient, withXhr } from '@angular/common/http';
 import { routes } from './app.routes';
+import { provideNzDateFnsAdapter } from 'ng-zorro-antd/core/time';
+
 
 registerLocaleData(it);
 
@@ -18,6 +20,6 @@ export const appConfig: ApplicationConfig = {
 		provideRouter(routes, withHashLocation()), provideNzI18n(it_IT), 
 		importProvidersFrom(FormsModule), 
 		provideAnimationsAsync(), 
-		provideHttpClient()
+		provideHttpClient(withXhr()), provideNzDateFnsAdapter()
 	]
 };
