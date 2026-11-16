@@ -7,7 +7,7 @@
  */
 
 /** Versione dell'app che scrive i dati (tenere allineata a package.json). */
-export const APP_VERSION = '1.1.0';
+export const APP_VERSION = '1.1.1';
 /** Versione minima i cui dati sono ancora leggibili da questa versione. */
 export const MIN_COMPATIBLE_VERSION = '1.1.0';
 /** Età massima dei dati salvati. */

@@ -10,7 +10,7 @@ import {
 	InputVideoTrack,
 	Mp4OutputFormat,
 	Output,
-	QUALITY_HIGH,
+	Quality,
 	VideoSample,
 } from 'mediabunny';
 import {
@@ -140,7 +140,7 @@ export class VideoProcessingService {
 			const analysis = await this.analyze(input, videoTrack, checkpoint);
 
 			this.phase.set('render');
-			const result = await this.render(input, analysis, file.name);
+			const result = await this.render(input, analysis, file.name, await targetBitrate(videoTrack));
 			finished = true;
 			return result;
 		} catch (err) {
@@ -240,7 +240,7 @@ export class VideoProcessingService {
 
 	// ---- Passata 2: oscuramento e codifica ----
 
-	private async render(input: Input, analysis: Analysis, sourceName: string): Promise<ProcessedVideo> {
+	private async render(input: Input, analysis: Analysis, sourceName: string, bitrate: number | null): Promise<ProcessedVideo> {
 		const output = new Output({
 			format: new Mp4OutputFormat({ fastStart: 'in-memory' }),
 			target: new BufferTarget(),
@@ -258,7 +258,8 @@ export class VideoProcessingService {
 			video: {
 				forceTranscode: true,
 				allowTransformationMetadata: false,
-				quality: QUALITY_HIGH,
+				// Stessa qualità dell'originale: bitrate medio del video sorgente (o 'high' se non misurabile).
+				quality: bitrate ? new Quality({ bitrate, bitrateMode: 'variable' }) : new Quality('high'),
 				processedWidth: analysis.width,
 				processedHeight: analysis.height,
 				process: (sample: VideoSample) => {
@@ -322,6 +323,25 @@ export class VideoProcessingService {
 		ctx.lineWidth = 2;
 		for (const b of boxes) ctx.strokeRect(b.x * scale, b.y * scale, b.width * scale, b.height * scale);
 		this.preview.set(canvas.toDataURL('image/jpeg', 0.7));
+	}
+}
+
+/** Codec sorgente più efficienti dell'H.264 di uscita: a parità di qualità serve circa il 50% di bitrate in più. */
+const EFFICIENT_CODECS = ['hevc', 'vp9', 'av1'];
+const EFFICIENT_CODEC_FACTOR = 1.5;
+
+/**
+ * Bitrate di uscita per mantenere la qualità dell'originale: il bitrate video medio del sorgente, aumentato se il
+ * sorgente usa un codec più efficiente. Null se non misurabile (si userà una qualità predefinita).
+ */
+async function targetBitrate(videoTrack: InputVideoTrack): Promise<number | null> {
+	try {
+		const stats = await videoTrack.computePacketStats();
+		if (!stats.averageBitrate || !Number.isFinite(stats.averageBitrate)) return null;
+		const factor = EFFICIENT_CODECS.includes(videoTrack.codec ?? '') ? EFFICIENT_CODEC_FACTOR : 1;
+		return Math.round(stats.averageBitrate * factor);
+	} catch {
+		return null;
 	}
 }
 

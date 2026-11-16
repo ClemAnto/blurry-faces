@@ -1,4 +1,5 @@
 import { Page, expect, test } from '@playwright/test';
+import { statSync } from 'node:fs';
 import { FIXTURES, audioStream, hasFacesSource, probe, videoStream } from './fixtures';
 import {
 	browseButton, cancelButton, checkAnonymization, downloadButton, errorAlert, expectAnonymized,
@@ -81,6 +82,11 @@ test.describe('elaborazione', () => {
 			const audioOut = audioStream(path);
 			expect(audioOut?.codec_name).toBe('aac');
 			expect(audioOut?.nb_read_packets).toBe(audioIn.nb_read_packets);
+
+			// Stessa qualità dell'originale: il bitrate (quindi la dimensione) resta vicino a quello di partenza.
+			const ratio = statSync(path).size / statSync(FIXTURES.faces).size;
+			expect(ratio, `dimensione risultato / originale = ${ratio.toFixed(2)}`).toBeGreaterThan(0.6);
+			expect(ratio).toBeLessThan(1.5);
 		});
 
 		test('video ruotato (da telefono): orientamento corretto e volti oscurati', async ({ page }, testInfo) => {
