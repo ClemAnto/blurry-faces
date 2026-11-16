@@ -16,6 +16,8 @@ export default defineConfig({
 		channel: 'chrome',
 		headless: true,
 		acceptDownloads: true,
+		// E2E_HIGH_PERF_GPU=1: sui portatili con due GPU forza Chrome sulla scheda dedicata (di default usa l'integrata).
+		launchOptions: process.env['E2E_HIGH_PERF_GPU'] ? { args: ['--force_high_performance_gpu'] } : {},
 	},
 	webServer: {
 		command: `yarn start --port ${PORT}`,

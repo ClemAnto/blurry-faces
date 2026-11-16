@@ -6,14 +6,23 @@ import {
 	FolderOutline,
 	StarOutline,
 	PlayCircleOutline,
-	DownloadOutline
+	DownloadOutline,
+	WarningFill,
+	InfoCircleFill,
+	CloseCircleFill,
+	ExclamationCircleFill
 } from '@ant-design/icons-angular/icons';
 
+/** Icone usate direttamente e da nz-result / nz-alert (stati warning, info, error). */
 const ICONS: IconDefinition[] = [
 	FolderOutline,
 	StarOutline,
 	PlayCircleOutline,
-	DownloadOutline
+	DownloadOutline,
+	WarningFill,
+	InfoCircleFill,
+	CloseCircleFill,
+	ExclamationCircleFill
 ];
 
 @NgModule({

@@ -1,5 +1,4 @@
-import { Injectable, signal } from '@angular/core';
-import * as faceapi from 'face-api.js';
+import { Injectable, inject, signal } from '@angular/core';
 import {
 	ALL_FORMATS,
 	BlobSource,
@@ -23,6 +22,8 @@ import {
 	nearestIndex,
 	tileGrid,
 } from './face-tracking';
+import { DETECTORS, DetectorKind } from './face-detectors';
+import { JobCheckpoint, JobCheckpointService } from './job-checkpoint.service';
 
 export type ProcessingPhase = 'idle' | 'analysis' | 'render';
 
@@ -41,7 +42,11 @@ export class ProcessingCanceledError extends Error {
 
 /** Lato massimo del frame usato per la detection: oltre, il frame viene ridotto prima dei tile. */
 const MAX_DETECTION_SIDE = 1920;
-const MIN_CONFIDENCE = 0.2;
+/**
+ * Combinato per default: sul video di prova SSD da solo lasciava scoperti volti chini e MediaPipe da solo ne perdeva
+ * di più (4 e 36 su 470), insieme nessuno; costa circa il 15% di tempo in più di SSD.
+ */
+const DEFAULT_DETECTOR: DetectorKind = 'combined';
 /** Celle in cui viene ridotto il volto, in larghezza: più sono poche, più l'oscuramento è forte. */
 const ANONYMIZE_CELLS = 10;
 /** Lato minimo di una cella in pixel: sui volti piccoli 10 celle sarebbero di 1–2 px e non oscurerebbero nulla. */
@@ -70,19 +75,23 @@ export class VideoProcessingService {
 	/** Anteprima dell'ultimo frame elaborato (data URL JPEG). */
 	readonly preview = signal<string | null>(null);
 
-	private modelsPromise: Promise<void> | null = null;
+	readonly detectorKind = signal<DetectorKind>(DEFAULT_DETECTOR);
+
 	private canceled = false;
 	private conversion: Conversion | null = null;
 	private lastPreviewAt = 0;
+	private jobs = inject(JobCheckpointService);
 
-	loadModels(): Promise<void> {
-		this.modelsPromise ??= faceapi.nets.ssdMobilenetv1.loadFromUri('assets/models/ssd_mobilenetv1')
-			.then(() => this.modelsReady.set(true))
-			.catch(err => {
-				this.modelsPromise = null;
-				throw err;
-			});
-		return this.modelsPromise;
+	setDetector(kind: DetectorKind): Promise<void> {
+		this.detectorKind.set(kind);
+		this.modelsReady.set(false);
+		return this.loadModels();
+	}
+
+	async loadModels(): Promise<void> {
+		const kind = this.detectorKind();
+		await DETECTORS[kind].load();
+		if (this.detectorKind() === kind) this.modelsReady.set(true);
 	}
 
 	cancel(): void {
@@ -90,64 +99,108 @@ export class VideoProcessingService {
 		this.conversion?.cancel();
 	}
 
+	/** Avanzamento (0–100) di un lavoro salvato, per mostrarlo prima di riprenderlo. */
+	static progressOf(checkpoint: JobCheckpoint): number {
+		if (checkpoint.analysisDone) return Math.round(ANALYSIS_WEIGHT * 100);
+		const last = checkpoint.timestamps[checkpoint.timestamps.length - 1];
+		if (last === undefined || !checkpoint.duration) return 0;
+		return Math.floor((last - checkpoint.start) / checkpoint.duration * ANALYSIS_WEIGHT * 100);
+	}
+
 	/**
 	 * Oscura i volti del video in due passate: prima rileva i volti su tutti i frame e ne ricostruisce le tracce,
 	 * poi decodifica di nuovo il video, oscura e ricodifica in MP4 copiando l'audio originale.
+	 * Con `resume` riprende un lavoro interrotto dall'ultimo fotogramma analizzato.
 	 */
-	async blurFaces(file: File): Promise<ProcessedVideo> {
+	async blurFaces(file: File, resume?: JobCheckpoint): Promise<ProcessedVideo> {
+		// Il Web Lock evita che Chrome congeli la tab in background durante l'elaborazione.
+		const locks = typeof navigator !== 'undefined' ? navigator.locks : undefined;
+		return locks
+			? locks.request('blurry-faces-elaborazione', () => this.run(file, resume))
+			: this.run(file, resume);
+	}
+
+	private async run(file: File, resume?: JobCheckpoint): Promise<ProcessedVideo> {
 		this.canceled = false;
-		this.progress.set(0);
+		this.progress.set(resume ? VideoProcessingService.progressOf(resume) : 0);
 		this.preview.set(null);
+		if (resume && resume.detector !== this.detectorKind()) await this.setDetector(resume.detector);
 		await this.loadModels();
 
 		const input = new Input({ source: new BlobSource(file), formats: ALL_FORMATS });
+		let finished = false;
 		try {
 			const videoTrack = await input.getPrimaryVideoTrack();
 			if (!videoTrack) throw new Error('Il file non contiene una traccia video.');
 			if (!(await videoTrack.canDecode())) throw new Error('Il formato video non è supportato da questo browser.');
 
+			const checkpoint = resume ?? await this.jobs.begin(file, this.detectorKind());
+
 			this.phase.set('analysis');
-			const analysis = await this.analyze(input, videoTrack);
+			const analysis = await this.analyze(input, videoTrack, checkpoint);
 
 			this.phase.set('render');
-			return await this.render(input, analysis, file.name);
+			const result = await this.render(input, analysis, file.name);
+			finished = true;
+			return result;
 		} catch (err) {
-			if (err instanceof ConversionCanceledError || this.canceled) throw new ProcessingCanceledError();
+			if (err instanceof ConversionCanceledError || this.canceled) {
+				finished = true;
+				throw new ProcessingCanceledError();
+			}
 			throw err;
 		} finally {
 			this.conversion = null;
 			this.phase.set('idle');
 			input.dispose();
+			// Lavoro concluso o annullato: niente da riprendere. Dopo un errore il checkpoint resta per riprovare.
+			if (finished) await this.jobs.finish();
 		}
 	}
 
 	// ---- Passata 1: detection e tracking ----
 
-	private async analyze(input: Input, videoTrack: InputVideoTrack): Promise<Analysis> {
+	private async analyze(input: Input, videoTrack: InputVideoTrack, checkpoint: JobCheckpoint): Promise<Analysis> {
 		const width = videoTrack.displayWidth;
 		const height = videoTrack.displayHeight;
 		const start = await videoTrack.getFirstTimestamp();
 		const duration = Math.max(0.001, (await input.computeDuration()) - start);
+		checkpoint.start = start;
+		checkpoint.duration = duration;
 
 		const scale = Math.min(1, MAX_DETECTION_SIDE / Math.max(width, height));
 		const [detCanvas, detCtx] = createCanvas(Math.round(width * scale), Math.round(height * scale));
 
-		const timestamps: number[] = [];
-		const frames: Detection[][] = [];
-		const sink = new CanvasSink(videoTrack, { poolSize: 2 });
+		// Ripresa: si riparte dopo l'ultimo fotogramma già analizzato.
+		const timestamps = checkpoint.timestamps;
+		const frames = checkpoint.frames;
+		const resumeAfter = timestamps.length ? timestamps[timestamps.length - 1] : -Infinity;
 
-		for await (const wrapped of sink.canvases()) {
-			if (this.canceled) throw new ProcessingCanceledError();
+		if (timestamps.length) {
+			console.log(`[VIDEO-PROCESSING] Ripresa dopo ${timestamps.length} fotogrammi già analizzati`
+				+ (checkpoint.analysisDone ? ' (analisi completa)' : ''));
+		}
+		if (!checkpoint.analysisDone) {
+			const sink = new CanvasSink(videoTrack, { poolSize: 2 });
+			const from = Number.isFinite(resumeAfter) ? resumeAfter : undefined;
 
-			detCtx.drawImage(wrapped.canvas, 0, 0, detCanvas.width, detCanvas.height);
-			const detections = await this.detectMultiScale(detCanvas);
-			timestamps.push(wrapped.timestamp);
-			frames.push(detections.map(d => ({
-				x: d.x / scale, y: d.y / scale, width: d.width / scale, height: d.height / scale, score: d.score,
-			})));
+			for await (const wrapped of sink.canvases(from)) {
+				if (this.canceled) throw new ProcessingCanceledError();
+				if (wrapped.timestamp <= resumeAfter) continue;
 
-			this.progress.set(Math.min(100, Math.floor((wrapped.timestamp - start) / duration * ANALYSIS_WEIGHT * 100)));
-			this.updatePreview(detCanvas, detections);
+				detCtx.drawImage(wrapped.canvas, 0, 0, detCanvas.width, detCanvas.height);
+				const detections = await this.detectMultiScale(detCanvas);
+				timestamps.push(wrapped.timestamp);
+				frames.push(detections.map(d => ({
+					x: d.x / scale, y: d.y / scale, width: d.width / scale, height: d.height / scale, score: d.score,
+				})));
+
+				this.progress.set(Math.min(100, Math.floor((wrapped.timestamp - start) / duration * ANALYSIS_WEIGHT * 100)));
+				this.updatePreview(detCanvas, detections);
+				void this.jobs.save(checkpoint);
+			}
+			checkpoint.analysisDone = true;
+			await this.jobs.save(checkpoint, true);
 		}
 
 		const span = timestamps.length > 1 ? timestamps[timestamps.length - 1] - timestamps[0] : 0;
@@ -172,9 +225,8 @@ export class VideoProcessingService {
 		return mergeDetections(all);
 	}
 
-	private async detect(canvas: HTMLCanvasElement): Promise<Detection[]> {
-		const results = await faceapi.detectAllFaces(canvas, new faceapi.SsdMobilenetv1Options({ minConfidence: MIN_CONFIDENCE }));
-		return results.map(r => ({ x: r.box.x, y: r.box.y, width: r.box.width, height: r.box.height, score: r.score }));
+	private detect(canvas: HTMLCanvasElement): Promise<Detection[]> {
+		return DETECTORS[this.detectorKind()].detect(canvas);
 	}
 
 	private tileCache: [HTMLCanvasElement, CanvasRenderingContext2D] | null = null;
@@ -217,8 +269,7 @@ export class VideoProcessingService {
 					}
 					sample.draw(frameCtx!, 0, 0, w, h);
 
-					const i = nearestIndex(analysis.timestamps, sample.timestamp);
-					const sx = w / analysis.width;
+					const i = nearestIndex(analysis.timestamps, sample.timestamp);					const sx = w / analysis.width;
 					const sy = h / analysis.height;
 					for (const b of analysis.masks[i] ?? []) {
 						anonymize(frameCtx!, small, { x: b.x * sx, y: b.y * sy, width: b.width * sx, height: b.height * sy });

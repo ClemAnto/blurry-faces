@@ -152,17 +152,40 @@ function lerpBox(a: Box, b: Box, t: number): Box {
 	};
 }
 
-export function padBox(b: Box, opts: TrackingOptions, frameWidth: number, frameHeight: number): Box {
-	const x1 = Math.max(0, b.x - b.width * opts.padX);
-	const y1 = Math.max(0, b.y - b.height * opts.padTop);
-	const x2 = Math.min(frameWidth, b.x + b.width * (1 + opts.padX));
-	const y2 = Math.min(frameHeight, b.y + b.height * (1 + opts.padBottom));
-	return { x: x1, y: y1, width: Math.max(0, x2 - x1), height: Math.max(0, y2 - y1) };
+/**
+ * Allarga il box. Non lo limita al fotogramma: per un volto tagliato dal bordo, un box "schiacciato" sposterebbe
+ * il centro dell'ellisse verso l'interno lasciando scoperta proprio la parte del viso vicina al bordo.
+ */
+export function padBox(b: Box, opts: TrackingOptions): Box {
+	const x1 = b.x - b.width * opts.padX;
+	const y1 = b.y - b.height * opts.padTop;
+	const x2 = b.x + b.width * (1 + opts.padX);
+	const y2 = b.y + b.height * (1 + opts.padBottom);
+	return { x: x1, y: y1, width: x2 - x1, height: y2 - y1 };
+}
+
+/** Allargamento, in frazione del lato, dei box che toccano il bordo: i detector li restituiscono già tagliati. */
+const EDGE_EXTENSION = 0.3;
+
+/** Un box che tocca il bordo è probabilmente un volto tagliato: lo si allunga verso l'esterno. */
+export function extendAtEdges(b: Box, frameWidth: number, frameHeight: number): Box {
+	const tolerance = 2;
+	let { x, y, width, height } = b;
+	if (b.x <= tolerance) { x -= b.width * EDGE_EXTENSION; width += b.width * EDGE_EXTENSION; }
+	if (b.y <= tolerance) { y -= b.height * EDGE_EXTENSION; height += b.height * EDGE_EXTENSION; }
+	if (b.x + b.width >= frameWidth - tolerance) width += b.width * EDGE_EXTENSION;
+	if (b.y + b.height >= frameHeight - tolerance) height += b.height * EDGE_EXTENSION;
+	return { x, y, width, height };
+}
+
+function intersectsFrame(b: Box, frameWidth: number, frameHeight: number): boolean {
+	return b.width > 0 && b.height > 0 && b.x < frameWidth && b.y < frameHeight && b.x + b.width > 0 && b.y + b.height > 0;
 }
 
 /**
  * Calcola, per ogni frame, le aree da oscurare: ogni traccia copre i frame tra la prima e l'ultima detection
- * (interpolando i buchi), più `extendBefore`/`extendAfter` frame ai lati. I box sono già allargati e limitati al frame.
+ * (interpolando i buchi), più `extendBefore`/`extendAfter` frame ai lati. I box sono già allargati e possono uscire
+ * dal fotogramma (vengono scartati solo quelli interamente fuori).
  */
 export function computeMasks(
 	frames: Detection[][],
@@ -195,8 +218,8 @@ export function computeMasks(
 	}
 
 	return masks.map(boxes => boxes
-		.map(b => padBox(b, opts, frameWidth, frameHeight))
-		.filter(b => b.width > 0 && b.height > 0));
+		.map(b => padBox(extendAtEdges(b, frameWidth, frameHeight), opts))
+		.filter(b => intersectsFrame(b, frameWidth, frameHeight)));
 }
 
 /**

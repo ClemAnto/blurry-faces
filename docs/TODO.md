@@ -18,10 +18,24 @@
 ## Da fare
 
 ### Qualità del rilevamento
-- [ ] Confrontare SSD MobileNet (face-api.js, fermo al 2020) con MediaPipe Face Detector full-range su un set di video di prova, soprattutto per volti di profilo e coperti
+- [x] Confronto SSD / MediaPipe full-range su un video reale: default `combined` (0 volti scoperti contro 4 di SSD e 36 di MediaPipe, su 470)
+- [x] Provati SCRFD-500M/10G e YOLOv8n-face via ONNX Runtime Web (WebGPU) e **scartati**. Su GPU Intel UHD integrata: 70–330 ms per inferenza (MediaPipe 10–17 ms, SSD ~90 ms); da soli lasciano scoperti 12–20 volti su 342 contro 1 del combinato SSD+MediaPipe; MediaPipe+YOLOv8n pareggia il combinato ma non è più veloce. Licenze problematiche (pesi InsightFace non commerciali, YOLO addestrato con Ultralytics AGPL). Ripetuto su RTX 3060 Laptop: SSD 19 ms, MediaPipe 12 ms, YOLOv8n 40 ms, SCRFD-10G 70 ms; da soli restano 15–26 volti scoperti su 353, e le combinazioni con MediaPipe non battono il combinato SSD+MediaPipe per tempo e copertura
+- [x] **La GPU conta più del modello**: con Chrome sulla RTX invece che sulla Intel UHD integrata il combinato attuale è 3–3,6 volte più veloce (33 s di video in 47 s invece di 172 s). Su Windows Chrome usa l'integrata di default; si cambia da Impostazioni › Sistema › Schermo › Grafica › Chrome › Prestazioni elevate. Nei test: `E2E_HIGH_PERF_GPU=1`
+- [ ] Suggerire nell'app di usare la GPU dedicata quando il renderer WebGL risulta una GPU integrata (Intel/AMD iGPU)
 - [ ] Fase di revisione prima dell'export: timeline con i box, aggiunta/rimozione manuale sui frame critici
+- [ ] Scelta del detector dalla UI (es. "rapida" = solo MediaPipe, circa 3 volte più veloce di SSD)
+- [x] Prova su 5 video reali (gite e attività con bambini): corretto il caso dei volti tagliati dal bordo del fotogramma, che restavano scoperti perché il box veniva limitato al frame e l'ellisse si spostava verso l'interno
+- [ ] Ripetere su altri tipi di video (controluce, notturni, folla lontana in 1080p/4K)
+- [ ] Il controllo e2e usa gli stessi detector dell'app: i volti che nessuno dei due vede sfuggono anche al test, quindi resta necessaria una verifica a occhio
+
+### Robustezza
+- [x] Ripresa dell'ultimo lavoro interrotto (checkpoint su OPFS con versione e timestamp, copia locale del video), Web Lock contro il congelamento della tab, conferma prima di chiudere durante l'elaborazione
+- [ ] Notifica a fine elaborazione e progresso nel titolo della tab (utile con la tab in background)
+- [ ] Screen Wake Lock mentre la pagina è visibile, per evitare lo standby da inattività
+- [ ] Salvare anche il risultato finito (oggi va riscaricato subito: un ricaricamento dopo la fine lo perde)
 
 ### Prestazioni
+- [ ] **Priorità**: un video di 2 minuti in 1024×576 verticale ha richiesto 20 minuti (10× il tempo reale). Il detector combinato più i tile (frame > 960 px) fanno 6 inferenze per fotogramma
 - [ ] Spostare la detection in un Web Worker con OffscreenCanvas: durante l'analisi il thread principale è saturo e la pagina risponde a fatica
 - [ ] Modalità "rapida": detection a frame alterni, lasciando al tracking l'interpolazione
 - [ ] Sui video 1080p e oltre i tile moltiplicano il costo per ~5: valutare tile solo ogni N frame

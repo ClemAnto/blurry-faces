@@ -1,15 +1,30 @@
 <input type="file" accept="video/*" (change)="onFileSelected($event)" hidden #fileInput>
 
 @if (!sourceUrl()) {
-	<nz-result nzStatus="info" nzTitle="Carica un video per iniziare"
-		nzSubTitle="Il video viene elaborato solo nel tuo browser: non viene caricato da nessuna parte.">
-		<div nz-result-extra>
-			<button nz-button nzType="primary"
-				nzSize="large" nzShape="round"
-				(click)="fileInput.click()">
-				<nz-icon nzType="folder" /> Sfoglia</button>
-		</div>
-	</nz-result>
+	@if (pendingJob(); as job) {
+		<nz-result nzStatus="warning" nzTitle="Elaborazione interrotta"
+			[nzSubTitle]="'L\'elaborazione di ' + job.checkpoint.file.name + ' si è fermata al ' + job.progress + '%. Puoi riprenderla da lì.'">
+			<div nz-result-extra>
+				@if (error()) {
+					<nz-alert class="mb-4" nzType="error" nzShowIcon [nzMessage]="error()!"></nz-alert>
+				}
+				<button nz-button nzType="primary" nzSize="large" nzShape="round"
+					[disabled]="!VideoProcessing.modelsReady()" (click)="resumeJob(fileInput)">
+					<nz-icon nzType="play-circle" /> Riprendi</button>
+				<button nz-button nzSize="large" nzShape="round" (click)="discardJob()">Scarta</button>
+			</div>
+		</nz-result>
+	} @else {
+		<nz-result nzStatus="info" nzTitle="Carica un video per iniziare"
+			nzSubTitle="Il video viene elaborato solo nel tuo browser: non viene caricato da nessuna parte.">
+			<div nz-result-extra>
+				<button nz-button nzType="primary"
+					nzSize="large" nzShape="round"
+					(click)="fileInput.click()">
+					<nz-icon nzType="folder" /> Sfoglia</button>
+			</div>
+		</nz-result>
+	}
 } @else {
 	<nz-card class="max-h-[80cqh] !flex">
 		@if (processing() && VideoProcessing.preview()) {

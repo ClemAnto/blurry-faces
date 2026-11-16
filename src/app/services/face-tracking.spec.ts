@@ -69,9 +69,20 @@ describe('face-tracking', () => {
 		expect(tracks.length).toBe(1);
 	});
 
-	it('allarga i box e li limita al frame', () => {
-		const masks = computeMasks([[det(0, 0, 100)]], 1000, 1000, { ...NO_PAD, padX: 0.25, padTop: 0.5, padBottom: 0.2 });
-		expect(masks[0][0]).toEqual({ x: 0, y: 0, width: 125, height: 120 });
+	it('allarga i box senza limitarli al frame, così l\'ellisse resta centrata sui volti tagliati dal bordo', () => {
+		const masks = computeMasks([[det(100, 100, 100)]], 1000, 1000, { ...NO_PAD, padX: 0.25, padTop: 0.5, padBottom: 0.2 });
+		expect(masks[0][0]).toEqual({ x: 75, y: 50, width: 150, height: 170 });
+	});
+
+	it('allunga verso l\'esterno i box che toccano il bordo (volti tagliati)', () => {
+		const masks = computeMasks([[det(0, 400, 100), det(400, 400, 100)]], 1000, 1000, NO_PAD);
+		expect(masks[0][0]).toEqual({ x: -30, y: 400, width: 130, height: 100 });
+		expect(masks[0][1]).toEqual({ x: 400, y: 400, width: 100, height: 100 });
+	});
+
+	it('scarta solo i box interamente fuori dal frame', () => {
+		const masks = computeMasks([[det(-150, 400, 100), det(850, 400, 100)]], 1000, 1000, NO_PAD);
+		expect(masks[0]).toEqual([{ x: 850, y: 400, width: 100, height: 100 }]);
 	});
 
 	it('tileGrid', () => {

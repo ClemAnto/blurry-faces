@@ -13,11 +13,12 @@ Package manager: **yarn** (c'è `yarn.lock`, la CI usa yarn e Node 22). Node è 
 - `yarn start`: dev server su http://localhost:4200 (i file nuovi in `public/` richiedono il riavvio)
 - `yarn build`: build di produzione in `dist/` (`baseHref: ./`, routing con hash, per GitHub Pages)
 - `yarn test --watch=false --browsers=ChromeHeadless`: Karma + Jasmine con il builder `@angular/build:karma`. Per un solo file: aggiungere `--include src/app/services/face-tracking.spec.ts`
-- `yarn e2e`: test end-to-end con Playwright (~2 min) sul Chrome installato, avviando da solo il dev server sulla porta 4300. Un solo test: `npx playwright test -g "video ruotato"`.
+- `yarn e2e`: test end-to-end con Playwright (~2,5 min) sul Chrome installato, avviando da solo il dev server sulla porta 4300. Un solo test: `npx playwright test -g "video ruotato"`. Sui portatili con due GPU Chrome usa l'integrata: con `E2E_HIGH_PERF_GPU=1` i test girano sulla dedicata, 3–4 volte più veloce.
 
 ### Test e2e
 
 - **Fixture**: [e2e/global-setup.ts](e2e/global-setup.ts) le genera con **ffmpeg**, che deve essere nel PATH, in `e2e/.fixtures/` (cartella ignorata da git). I clip con volti si ritagliano da un video sorgente non versionato: di default `../face-api.js/examples/media/bbt.mp4`, oppure il file indicato con `FACES_VIDEO`. Se la sorgente manca, i test sui volti vengono saltati. Per rigenerare le fixture basta cancellare la cartella.
+- **Helper** in [e2e/helpers.ts](e2e/helpers.ts), riusabili anche per provare video arbitrari con uno spec temporaneo.
 - **Controllo di privacy** (`checkAnonymization`): usa il detector dell'app tramite le API di debug `ng`, quindi funziona solo con il dev server.
   - Per ogni volto rilevato con sicurezza (score ≥ 0,5) nell'originale, verifica che nel risultato il dettaglio fine della zona non sia più correlato all'originale: correlazione dei Laplaciani ≤ 0,45.
   - Gli angoli del fotogramma fanno da controllo e devono restare sopra 0,5.
@@ -29,14 +30,21 @@ Package manager: **yarn** (c'è `yarn.lock`, la CI usa yarn e Node 22). Node è 
 - **Routing** ([src/app/app.routes.ts](src/app/app.routes.ts)): una sola route, `/lab`, lazy; `withHashLocation()` serve per GitHub Pages.
 - **[LabComponent](src/app/views/lab/lab.component.ts)**: la UI (ng-zorro-antd + Tailwind). Selezione file, avvio, annulla, download, messaggi di errore.
 - **[VideoProcessingService](src/app/services/video-processing.service.ts)**: la pipeline, in due passate sullo stesso `Input` di mediabunny.
-  1. **Analisi**: `CanvasSink` decodifica ogni frame (fps reali, rotazione applicata). La detection gira con SSD MobileNet sul frame intero e, se il frame supera ~960 px, anche su tile sovrapposti. Il frame viene prima ridotto a un lato massimo di 1920 px. Si salvano solo i box, non le immagini.
+  1. **Analisi**: `CanvasSink` decodifica ogni frame (fps reali, rotazione applicata). La detection gira sul frame intero e, se il frame supera ~960 px, anche su tile sovrapposti. Il frame viene prima ridotto a un lato massimo di 1920 px. Si salvano solo i box, non le immagini.
   2. **Tracking** ([face-tracking.ts](src/app/services/face-tracking.ts), logica pura e testata): collega i box tra frame in tracce, interpola i buchi fino a 1 s, estende ogni traccia di 0,5 s prima e dopo, e allarga i box.
   3. **Rendering**: `Conversion` di mediabunny ridecodifica il video. Nel callback `process` si disegna il frame, si oscurano le aree e si restituisce un `VideoSample`. Il video viene ricodificato in MP4, mentre l'audio originale viene copiato quando possibile.
 
   Le due passate si allineano per timestamp, con `nearestIndex`. Lo stato verso la UI passa dai signal `phase`, `progress`, `preview` e `modelsReady`.
 - **Oscuramento** (`anonymize`): l'area ellittica viene ridotta a circa 10 celle in larghezza e poi riallargata. Il primo disegno è sempre opaco, così l'oscuramento funziona anche dove `ctx.filter` non esiste; il blur via filtro si aggiunge solo dove è supportato. Per privacy si preferisce oscurare troppo piuttosto che troppo poco: i falsi positivi sono accettabili.
-- **Modelli**: in [src/assets/models/](src/assets/models/) c'è solo `ssd_mobilenetv1`, l'unico usato.
-- **[CustomIconsModule](src/app/shareds/custom-icons.module.ts)**: le icone Ant Design vanno registrate nell'array `ICONS`.
+- **Detector** ([face-detectors.ts](src/app/services/face-detectors.ts)): `ssd` (SSD MobileNet v1 di face-api.js), `mediapipe` (BlazeFace full-range di `@mediapipe/tasks-vision`) oppure `combined`, che usa entrambi e unisce i risultati. Il default è `combined`. Sul video di prova SSD da solo perdeva i volti chini (4 su 470), MediaPipe da solo ne perdeva 36, insieme nessuno; costa circa il 15% di tempo in più di SSD. Si cambia con `VideoProcessingService.setDetector()`.
+- **Modelli**: in [src/assets/models/](src/assets/models/) ci sono `ssd_mobilenetv1` e `mediapipe/` (full-range in uso, short-range presente per prove). I file WASM di MediaPipe vengono copiati da `node_modules/@mediapipe/tasks-vision/wasm` ad `assets/mediapipe/wasm` tramite gli asset di `angular.json`. `@mediapipe/tasks-vision` è fissato a una versione esatta.
+- **Ripresa dei lavori interrotti** ([job-checkpoint.service.ts](src/app/services/job-checkpoint.service.ts)):
+  - All'avvio di un lavoro si salvano in OPFS una copia del video e, ogni 3 s, le detection già calcolate. Dopo un ricaricamento, una chiusura o un crash, il Lab propone "Riprendi" / "Scarta".
+  - L'analisi riparte dall'ultimo fotogramma salvato; il rendering si rifà da capo. Se la copia del video manca, si chiede di riselezionare lo stesso file, verificato per nome, dimensione e data.
+  - Il checkpoint si cancella a lavoro concluso o annullato, e resta dopo un errore per poter riprovare.
+  - L'elaborazione gira dentro un Web Lock, perché Chrome non congela le tab che lo tengono, e durante il lavoro la pagina chiede conferma prima di chiudersi.
+- **Storage locale** ([local-store.ts](src/app/services/local-store.ts)): wrapper unico su OPFS. Ogni JSON è salvato con `APP_VERSION` e un timestamp `performance.timeOrigin + performance.now()`. In lettura si scartano i dati più vecchi di 7 giorni o di versioni non comprese tra `MIN_COMPATIBLE_VERSION` e `APP_VERSION`. `APP_VERSION` va tenuta allineata a `package.json`, e `MIN_COMPATIBLE_VERSION` alzata quando cambia il formato del checkpoint.
+- **[CustomIconsModule](src/app/shareds/custom-icons.module.ts)**: le icone Ant Design vanno registrate nell'array `ICONS`, comprese quelle usate internamente da `nz-result` e `nz-alert` (es. `warning-fill`); un'icona mancante genera un errore non gestito a runtime.
 - **Stili**: tema ng-zorro in [theme.less](src/styles/theme.less) (richiede il pacchetto `less`), Tailwind v4 via PostCSS in [styles.scss](src/styles/styles.scss).
 - **TypeScript**: `strict` attivo ma `strictNullChecks` disattivato.
 - **mediabunny** è fissato a una versione esatta: aggiornarlo di proposito, verificando l'API di `Conversion`/`CanvasSink`.
